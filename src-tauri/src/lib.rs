@@ -432,16 +432,6 @@ async fn get_client() -> Result<ConnectToolServiceClient<tonic::transport::Chann
 }
 
 #[tauri::command]
-async fn init_steam() -> Result<InitSteamResponse, String> {
-    let mut client = get_client().await?;
-    let response = client
-        .init_steam(InitSteamRequest {})
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(response.into_inner())
-}
-
-#[tauri::command]
 async fn create_lobby() -> Result<CreateLobbyResponse, String> {
     let mut client = get_client().await?;
     let response = client
@@ -607,7 +597,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            init_steam,
             create_lobby,
             join_lobby,
             leave_lobby,

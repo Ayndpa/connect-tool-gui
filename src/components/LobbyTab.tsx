@@ -30,17 +30,14 @@ import {
   LeaveLobbyResponse,
   GetFriendLobbiesResponse,
   InviteFriendResponse,
-  InitSteamResponse,
 } from "../types";
 
 interface LobbyTabProps {
   onError: (msg: string) => void;
   onSuccess: (msg: string) => void;
-  onSteamStatusChange?: (initialized: boolean) => void;
 }
 
-export function LobbyTab({ onError, onSuccess, onSteamStatusChange }: LobbyTabProps) {
-  const [steamInitialized, setSteamInitialized] = useState(false);
+export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
   const [lobbyIdInput, setLobbyIdInput] = useState("");
   const [currentLobbyId, setCurrentLobbyId] = useState<string | null>(null);
   const [lobbyMembers, setLobbyMembers] = useState<LobbyMember[]>([]);
@@ -118,22 +115,6 @@ export function LobbyTab({ onError, onSuccess, onSteamStatusChange }: LobbyTabPr
     return () => clearInterval(interval);
   }, [refreshLobbyInfo]);
 
-  const handleInitSteam = async () => {
-    try {
-      const res = await invoke<InitSteamResponse>("init_steam");
-      if (res.success) {
-        setSteamInitialized(true);
-        onSteamStatusChange?.(true);
-        onSuccess("Steam 初始化成功！");
-      } else {
-        onError(`失败: ${res.message}`);
-      }
-    } catch (e) {
-      console.error(e);
-      onError(String(e));
-    }
-  };
-
   const handleCreateLobby = async () => {
     try {
       const res = await invoke<CreateLobbyResponse>("create_lobby");
@@ -205,21 +186,6 @@ export function LobbyTab({ onError, onSuccess, onSteamStatusChange }: LobbyTabPr
 
   return (
     <Stack tokens={containerStackTokens} styles={{ root: { marginTop: 16 } }}>
-      {/* Steam Init */}
-      <Stack styles={cardStyles} tokens={sectionStackTokens}>
-        <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-          Steam 连接
-        </Text>
-        <Stack horizontal tokens={{ childrenGap: 12 }} verticalAlign="center">
-          <PrimaryButton
-            text={steamInitialized ? "重新连接" : "初始化 Steam"}
-            onClick={handleInitSteam}
-            iconProps={{ iconName: steamInitialized ? "Refresh" : "Play" }}
-          />
-          {steamInitialized && <Text styles={{ root: { color: "#107c10" } }}> 已连接</Text>}
-        </Stack>
-      </Stack>
-
       {/* Lobby Management */}
       <Stack styles={cardStyles} tokens={sectionStackTokens}>
         <Text variant="large" styles={{ root: { fontWeight: 600 } }}>

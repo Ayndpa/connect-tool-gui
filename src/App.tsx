@@ -20,12 +20,7 @@ function App() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Status indicators for header
-  const [steamInitialized, setSteamInitialized] = useState(false);
   const [vpnEnabled, setVpnEnabled] = useState(false);
-
-  const handleSteamStatusChange = (initialized: boolean) => {
-    setSteamInitialized(initialized);
-  };
 
   const handleVpnStatusChange = (enabled: boolean) => {
     setVpnEnabled(enabled);
@@ -46,7 +41,7 @@ function App() {
     <ThemeProvider>
       <Stack styles={mainStyles} tokens={containerStackTokens}>
         {/* Header */}
-        <AppHeader steamInitialized={steamInitialized} vpnEnabled={vpnEnabled} />
+        <AppHeader vpnEnabled={vpnEnabled} />
 
         {/* Notifications */}
         {errorMsg && (
@@ -65,7 +60,6 @@ function App() {
             <LobbyTab 
               onError={handleError} 
               onSuccess={showSuccess} 
-              onSteamStatusChange={handleSteamStatusChange}
             />
           </PivotItem>
 

@@ -27,11 +27,6 @@ export interface VPNRoute {
 }
 
 // Response Interfaces
-export interface InitSteamResponse {
-  success: boolean;
-  message: string;
-}
-
 export interface CreateLobbyResponse {
   success: boolean;
   lobby_id: string;
