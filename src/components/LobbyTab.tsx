@@ -43,6 +43,7 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
   const [lobbyMembers, setLobbyMembers] = useState<LobbyMember[]>([]);
   const [friendLobbies, setFriendLobbies] = useState<FriendLobby[]>([]);
   const [inviteFriendId, setInviteFriendId] = useState("");
+  const [isCreatingLobby, setIsCreatingLobby] = useState(false);
 
   // Columns
   const memberColumns: IColumn[] = [
@@ -66,6 +67,13 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
           {item.ping} ms
         </Text>
       ),
+    },
+    {
+      key: "relay_info",
+      name: "连接类型",
+      fieldName: "relay_info",
+      minWidth: 80,
+      maxWidth: 120,
     },
   ];
 
@@ -116,10 +124,11 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
   }, [refreshLobbyInfo]);
 
   const handleCreateLobby = async () => {
+    setIsCreatingLobby(true);
     try {
       const res = await invoke<CreateLobbyResponse>("create_lobby");
       if (res.success) {
-        refreshLobbyInfo();
+        await refreshLobbyInfo();
         onSuccess("大厅创建成功！");
       } else {
         onError("创建大厅失败");
@@ -127,6 +136,8 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
     } catch (e) {
       console.error(e);
       onError(String(e));
+    } finally {
+      setIsCreatingLobby(false);
     }
   };
 
@@ -194,9 +205,9 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
 
         <Stack horizontal tokens={{ childrenGap: 12 }}>
           <PrimaryButton
-            text="创建大厅"
+            text={isCreatingLobby ? "创建中..." : "创建大厅"}
             onClick={handleCreateLobby}
-            disabled={!!currentLobbyId}
+            disabled={!!currentLobbyId || isCreatingLobby}
             iconProps={{ iconName: "Add" }}
           />
           <DefaultButton
