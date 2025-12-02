@@ -35,3 +35,7 @@ uds_windows = "1.0"
 async-io = "2"
 tokio-util = { version = "0.7", features = ["compat"] }
 futures = "0.3"
+winreg = "0.52"
+
+[target.'cfg(unix)'.dependencies]
+# Unix-specific dependencies if needed
