@@ -1,26 +1,32 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Stack,
   Text,
-  TextField,
-  PrimaryButton,
-  DefaultButton,
-  Separator,
+  Button,
+  Input,
+  Divider,
   MessageBar,
-  MessageBarType,
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  IColumn,
+  MessageBarBody,
   Label,
-  Persona,
-  PersonaSize,
-  PersonaPresence,
-  IconButton,
-  TooltipHost,
-} from "@fluentui/react";
-import { cardStyles, sectionStackTokens, containerStackTokens } from "../styles";
+  Avatar,
+  Tooltip,
+  makeStyles,
+  tokens,
+  Table,
+  TableHeader,
+  TableRow,
+  TableHeaderCell,
+  TableBody,
+  TableCell,
+} from "@fluentui/react-components";
+import {
+  AddRegular,
+  SignOutRegular,
+  CopyRegular,
+  PersonAddRegular,
+  ArrowSyncRegular,
+} from "@fluentui/react-icons";
+import { useStyles as useGlobalStyles, containerGap, sectionGap } from "../styles";
 import {
   LobbyMember,
   FriendLobby,
@@ -31,6 +37,52 @@ import {
   GetFriendLobbiesResponse,
   InviteFriendResponse,
 } from "../types";
+
+const useLocalStyles = makeStyles({
+  container: {
+    display: "flex",
+    flexDirection: "column",
+    gap: containerGap,
+    marginTop: "16px",
+  },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: sectionGap,
+  },
+  horizontalGroup: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+  },
+  inputWrapper: {
+    width: "280px",
+  },
+  sectionTitle: {
+    fontWeight: 600,
+  },
+  memberPing: {
+    fontFamily: "monospace",
+  },
+  emptyText: {
+    color: tokens.colorNeutralForeground3,
+    fontStyle: "italic",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  lobbyInfoBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  smallButton: {
+    minWidth: "auto",
+    height: "28px",
+  },
+});
 
 interface LobbyTabProps {
   onError: (msg: string) => void;
@@ -45,61 +97,8 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
   const [inviteFriendId, setInviteFriendId] = useState("");
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
 
-  // Columns
-  const memberColumns: IColumn[] = [
-    {
-      key: "name",
-      name: "名称",
-      minWidth: 120,
-      maxWidth: 200,
-      onRender: (item: LobbyMember) => (
-        <Persona text={item.name} size={PersonaSize.size24} presence={PersonaPresence.online} />
-      ),
-    },
-    { key: "steam_id", name: "Steam ID", fieldName: "steam_id", minWidth: 150, maxWidth: 200 },
-    {
-      key: "ping",
-      name: "延迟",
-      minWidth: 60,
-      maxWidth: 80,
-      onRender: (item: LobbyMember) => (
-        <Text style={{ color: item.ping < 50 ? "#107c10" : item.ping < 100 ? "#ffaa00" : "#d13438" }}>
-          {item.ping} ms
-        </Text>
-      ),
-    },
-    {
-      key: "relay_info",
-      name: "连接类型",
-      fieldName: "relay_info",
-      minWidth: 80,
-      maxWidth: 120,
-    },
-  ];
-
-  const friendLobbyColumns: IColumn[] = [
-    {
-      key: "name",
-      name: "好友",
-      minWidth: 120,
-      onRender: (item: FriendLobby) => (
-        <Persona text={item.name} size={PersonaSize.size24} presence={PersonaPresence.online} />
-      ),
-    },
-    { key: "lobby_id", name: "大厅 ID", fieldName: "lobby_id", minWidth: 150, maxWidth: 200 },
-    {
-      key: "action",
-      name: "",
-      minWidth: 80,
-      onRender: (item: FriendLobby) => (
-        <PrimaryButton
-          text="加入"
-          onClick={() => handleJoinLobby(item.lobby_id)}
-          styles={{ root: { height: 28 } }}
-        />
-      ),
-    },
-  ];
+  const styles = useGlobalStyles();
+  const localStyles = useLocalStyles();
 
   const refreshLobbyInfo = useCallback(async () => {
     try {
@@ -195,122 +194,207 @@ export function LobbyTab({ onError, onSuccess }: LobbyTabProps) {
     }
   };
 
+  const getPingColor = (ping: number) => {
+    if (ping < 100) return tokens.colorPaletteGreenForeground1;
+    if (ping < 200) return tokens.colorPaletteYellowForeground1;
+    return tokens.colorPaletteRedForeground1;
+  };
+
   return (
-    <Stack tokens={containerStackTokens} styles={{ root: { marginTop: 16 } }}>
+    <div className={localStyles.container}>
       {/* Lobby Management */}
-      <Stack styles={cardStyles} tokens={sectionStackTokens}>
-        <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
+      <div className={`${styles.card} ${localStyles.section}`}>
+        <Text size={400} className={localStyles.sectionTitle}>
           大厅
         </Text>
 
-        <Stack horizontal tokens={{ childrenGap: 12 }}>
-          <PrimaryButton
-            text={isCreatingLobby ? "创建中..." : "创建大厅"}
+        <div className={localStyles.horizontalGroup}>
+          <Button
+            appearance="primary"
             onClick={handleCreateLobby}
             disabled={!!currentLobbyId || isCreatingLobby}
-            iconProps={{ iconName: "Add" }}
-          />
-          <DefaultButton
-            text="离开大厅"
+            icon={<AddRegular />}
+          >
+            {isCreatingLobby ? "创建中..." : "创建大厅"}
+          </Button>
+          <Button
             onClick={handleLeaveLobby}
             disabled={!currentLobbyId}
-            iconProps={{ iconName: "Leave" }}
-          />
-        </Stack>
+            icon={<SignOutRegular />}
+          >
+            离开大厅
+          </Button>
+        </div>
 
-        <Stack horizontal tokens={{ childrenGap: 12 }} verticalAlign="end">
-          <TextField
-            label="通过大厅 ID 加入"
-            value={lobbyIdInput}
-            onChange={(_, v) => setLobbyIdInput(v || "")}
-            disabled={!!currentLobbyId}
-            styles={{ root: { width: 280 } }}
-            placeholder="输入大厅 ID..."
-          />
-          <DefaultButton
-            text="加入"
-            onClick={() => handleJoinLobby(lobbyIdInput)}
-            disabled={!!currentLobbyId || !lobbyIdInput}
-          />
-        </Stack>
+        <div className={localStyles.section}>
+          <Label htmlFor="lobby-id-input">通过大厅 ID 加入</Label>
+          <div className={localStyles.horizontalGroup}>
+            <Input
+              id="lobby-id-input"
+              value={lobbyIdInput}
+              onChange={(_, data) => setLobbyIdInput(data.value)}
+              disabled={!!currentLobbyId}
+              placeholder="输入大厅 ID..."
+              className={localStyles.inputWrapper}
+            />
+            <Button
+              onClick={() => handleJoinLobby(lobbyIdInput)}
+              disabled={!!currentLobbyId || !lobbyIdInput}
+            >
+              加入
+            </Button>
+          </div>
+        </div>
 
         {currentLobbyId && (
-          <MessageBar messageBarType={MessageBarType.success}>
-            <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-              <Text>
-                当前大厅: <b>{currentLobbyId}</b>
-              </Text>
-              <TooltipHost content="复制到剪贴板">
-                <IconButton
-                  iconProps={{ iconName: "Copy" }}
-                  onClick={() => {
-                    navigator.clipboard.writeText(currentLobbyId);
-                    onSuccess("已复制！");
-                  }}
-                />
-              </TooltipHost>
-            </Stack>
+          <MessageBar intent="success">
+            <MessageBarBody>
+              <div className={localStyles.lobbyInfoBar}>
+                <Text>
+                  当前大厅: <strong>{currentLobbyId}</strong>
+                </Text>
+                <Tooltip content="复制到剪贴板" relationship="label">
+                  <Button
+                    appearance="subtle"
+                    icon={<CopyRegular />}
+                    size="small"
+                    onClick={() => {
+                      navigator.clipboard.writeText(currentLobbyId);
+                      onSuccess("已复制！");
+                    }}
+                  />
+                </Tooltip>
+              </div>
+            </MessageBarBody>
           </MessageBar>
         )}
 
         {lobbyMembers.length > 0 && (
           <>
-            <Separator />
+            <Divider />
             <Label>成员 ({lobbyMembers.length})</Label>
-            <DetailsList
-              items={lobbyMembers}
-              columns={memberColumns}
-              layoutMode={DetailsListLayoutMode.justified}
-              selectionMode={SelectionMode.none}
-              compact
-            />
+            <Table size="small">
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>名称</TableHeaderCell>
+                  <TableHeaderCell>Steam ID</TableHeaderCell>
+                  <TableHeaderCell>延迟</TableHeaderCell>
+                  <TableHeaderCell>连接类型</TableHeaderCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {lobbyMembers.map((member) => (
+                  <TableRow key={member.steam_id}>
+                    <TableCell>
+                      <div className={localStyles.horizontalGroup}>
+                        <Avatar
+                          name={member.name}
+                          size={24}
+                          color="colorful"
+                          badge={{ status: "available" }}
+                        />
+                        <Text>{member.name}</Text>
+                      </div>
+                    </TableCell>
+                    <TableCell>{member.steam_id}</TableCell>
+                    <TableCell>
+                      <Text
+                        className={localStyles.memberPing}
+                        style={{ color: getPingColor(member.ping) }}
+                      >
+                        {member.ping} ms
+                      </Text>
+                    </TableCell>
+                    <TableCell>{member.relay_info}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </>
         )}
 
         {currentLobbyId && (
           <>
-            <Separator />
+            <Divider />
             <Label>邀请好友</Label>
-            <Stack horizontal tokens={{ childrenGap: 12 }} verticalAlign="end">
-              <TextField
+            <div className={localStyles.horizontalGroup}>
+              <Input
                 value={inviteFriendId}
-                onChange={(_, v) => setInviteFriendId(v || "")}
+                onChange={(_, data) => setInviteFriendId(data.value)}
                 placeholder="好友的 Steam ID"
-                styles={{ root: { width: 280 } }}
+                className={localStyles.inputWrapper}
               />
-              <PrimaryButton
-                text="邀请"
+              <Button
+                appearance="primary"
                 onClick={handleInviteFriend}
                 disabled={!inviteFriendId}
-                iconProps={{ iconName: "AddFriend" }}
-              />
-            </Stack>
+                icon={<PersonAddRegular />}
+              >
+                邀请
+              </Button>
+            </div>
           </>
         )}
-      </Stack>
+      </div>
 
       {/* Friend Lobbies */}
-      <Stack styles={cardStyles} tokens={sectionStackTokens}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
+      <div className={`${styles.card} ${localStyles.section}`}>
+        <div className={localStyles.headerRow}>
+          <Text size={400} className={localStyles.sectionTitle}>
             好友大厅
           </Text>
-          <IconButton iconProps={{ iconName: "Refresh" }} onClick={handleGetFriendLobbies} title="刷新" />
-        </Stack>
+          <Tooltip content="刷新" relationship="label">
+            <Button
+              appearance="subtle"
+              icon={<ArrowSyncRegular />}
+              onClick={handleGetFriendLobbies}
+            />
+          </Tooltip>
+        </div>
         {friendLobbies.length > 0 ? (
-          <DetailsList
-            items={friendLobbies}
-            columns={friendLobbyColumns}
-            layoutMode={DetailsListLayoutMode.justified}
-            selectionMode={SelectionMode.none}
-            compact
-          />
+          <Table size="small">
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>好友</TableHeaderCell>
+                <TableHeaderCell>大厅 ID</TableHeaderCell>
+                <TableHeaderCell></TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {friendLobbies.map((lobby) => (
+                <TableRow key={lobby.lobby_id}>
+                  <TableCell>
+                    <div className={localStyles.horizontalGroup}>
+                      <Avatar
+                        name={lobby.name}
+                        size={24}
+                        color="colorful"
+                        badge={{ status: "available" }}
+                      />
+                      <Text>{lobby.name}</Text>
+                    </div>
+                  </TableCell>
+                  <TableCell>{lobby.lobby_id}</TableCell>
+                  <TableCell>
+                    <Button
+                      appearance="primary"
+                      size="small"
+                      onClick={() => handleJoinLobby(lobby.lobby_id)}
+                      className={localStyles.smallButton}
+                    >
+                      加入
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         ) : (
-          <Text styles={{ root: { color: "#605e5c", fontStyle: "italic" } }}>
+          <Text className={localStyles.emptyText}>
             当前没有好友在大厅中，点击刷新按钮检查。
           </Text>
         )}
-      </Stack>
-    </Stack>
+      </div>
+    </div>
   );
 }

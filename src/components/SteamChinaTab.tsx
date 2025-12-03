@@ -1,27 +1,98 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Stack,
   Text,
-  PrimaryButton,
-  Separator,
+  Button,
+  Divider,
   MessageBar,
-  MessageBarType,
-} from "@fluentui/react";
-import { cardStyles, sectionStackTokens, containerStackTokens } from "../styles";
+  MessageBarBody,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
+import { ArrowSyncRegular, PlayRegular } from "@fluentui/react-icons";
+import { useStyles as useGlobalStyles, containerGap, sectionGap } from "../styles";
 import { FindSteamPathResponse, GetSteamStatusResponse, RestartSteamChinaResponse } from "../types";
+
+const useLocalStyles = makeStyles({
+  container: {
+    display: "flex",
+    flexDirection: "column",
+    gap: containerGap,
+    marginTop: "16px",
+  },
+  coreWarning: {
+    marginBottom: "8px",
+  },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: sectionGap,
+  },
+  horizontalGroup: {
+    display: "flex",
+    gap: "32px",
+  },
+  infoGroup: {
+    display: "flex",
+    flexDirection: "column",
+  },
+  infoLabel: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  infoValue: {
+    fontFamily: "monospace",
+    fontWeight: 500,
+  },
+  statusRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "32px",
+  },
+  statusDot: {
+    width: "10px",
+    height: "10px",
+    borderRadius: "50%",
+  },
+  statusText: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  actionRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+  },
+  actionHint: {
+    color: tokens.colorNeutralForeground4,
+    fontSize: tokens.fontSizeBase200,
+  },
+  description: {
+    color: tokens.colorNeutralForeground3,
+  },
+  sectionTitle: {
+    fontWeight: 600,
+  },
+});
 
 interface SteamChinaTabProps {
   onError: (msg: string) => void;
   onSuccess: (msg: string) => void;
+  coreRunning?: boolean;
+  onStopCore?: () => Promise<unknown>;
 }
 
-export function SteamChinaTab({ onError, onSuccess }: SteamChinaTabProps) {
+export function SteamChinaTab({ onError, onSuccess, coreRunning, onStopCore }: SteamChinaTabProps) {
   const [steamPath, setSteamPath] = useState<string | null>(null);
   const [steamExePath, setSteamExePath] = useState<string | null>(null);
   const [isSteamRunning, setIsSteamRunning] = useState(false);
   const [steamProcessId, setSteamProcessId] = useState<number | null>(null);
   const [isRestartingSteam, setIsRestartingSteam] = useState(false);
+  const [isStoppingCore, setIsStoppingCore] = useState(false);
+
+  const styles = useGlobalStyles();
+  const localStyles = useLocalStyles();
 
   const refreshSteamStatus = useCallback(async () => {
     try {
@@ -48,6 +119,24 @@ export function SteamChinaTab({ onError, onSuccess }: SteamChinaTabProps) {
   }, [refreshSteamStatus]);
 
   const handleRestartSteamChina = async () => {
+    // 如果 Core 正在运行，先停止它
+    if (coreRunning && onStopCore) {
+      setIsStoppingCore(true);
+      try {
+        await onStopCore();
+        onSuccess("核心服务已停止");
+        // 等待一小段时间确保 Core 完全停止
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (e) {
+        console.error("Failed to stop core:", e);
+        onError(`停止核心服务失败: ${String(e)}`);
+        setIsStoppingCore(false);
+        return;
+      } finally {
+        setIsStoppingCore(false);
+      }
+    }
+
     setIsRestartingSteam(true);
     try {
       const res = await invoke<RestartSteamChinaResponse>("restart_steam_china");
@@ -67,104 +156,117 @@ export function SteamChinaTab({ onError, onSuccess }: SteamChinaTabProps) {
   };
 
   return (
-    <Stack tokens={containerStackTokens} styles={{ root: { marginTop: 16 } }}>
-      <Stack styles={cardStyles} tokens={sectionStackTokens}>
-        <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
+    <div className={localStyles.container}>
+      <div className={`${styles.card} ${localStyles.section}`}>
+        <Text size={400} className={localStyles.sectionTitle}>
           Steam 中国区启动器
         </Text>
-        <Text styles={{ root: { color: "#605e5c" } }}>
+        <Text className={localStyles.description}>
           此功能可以检测 Steam 是否正在运行，如果正在运行则关闭它，然后以 -steamchina 参数重新启动。
         </Text>
 
-        <Separator />
+        <Divider />
 
         {/* Steam Installation Info */}
-        <Stack tokens={{ childrenGap: 8 }}>
-          <Text variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>
+        <div className={localStyles.section}>
+          <Text size={300} weight="semibold">
             Steam 安装信息
           </Text>
 
-          <Stack horizontal tokens={{ childrenGap: 32 }}>
-            <Stack>
-              <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                安装路径
-              </Text>
-              <Text styles={{ root: { fontFamily: "monospace", fontWeight: 500 } }}>{steamPath || "未检测到"}</Text>
-            </Stack>
-            <Stack>
-              <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                可执行文件
-              </Text>
-              <Text styles={{ root: { fontFamily: "monospace", fontWeight: 500 } }}>{steamExePath || "未检测到"}</Text>
-            </Stack>
-          </Stack>
+          <div className={localStyles.horizontalGroup}>
+            <div className={localStyles.infoGroup}>
+              <Text className={localStyles.infoLabel}>安装路径</Text>
+              <Text className={localStyles.infoValue}>{steamPath || "未检测到"}</Text>
+            </div>
+            <div className={localStyles.infoGroup}>
+              <Text className={localStyles.infoLabel}>可执行文件</Text>
+              <Text className={localStyles.infoValue}>{steamExePath || "未检测到"}</Text>
+            </div>
+          </div>
 
-          <Stack horizontal tokens={{ childrenGap: 32 }} verticalAlign="center">
-            <Stack>
-              <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                运行状态
-              </Text>
-              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+          <div className={localStyles.statusRow}>
+            <div className={localStyles.infoGroup}>
+              <Text className={localStyles.infoLabel}>运行状态</Text>
+              <div className={localStyles.statusText}>
                 <div
+                  className={localStyles.statusDot}
                   style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: "50%",
-                    backgroundColor: isSteamRunning ? "#107c10" : "#d13438",
+                    backgroundColor: isSteamRunning
+                      ? tokens.colorPaletteGreenBackground3
+                      : tokens.colorPaletteRedBackground3,
                   }}
                 />
-                <Text styles={{ root: { fontWeight: 500 } }}>{isSteamRunning ? "运行中" : "未运行"}</Text>
-              </Stack>
-            </Stack>
-            {isSteamRunning && steamProcessId && (
-              <Stack>
-                <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                  进程 ID
+                <Text style={{ fontWeight: 500 }}>
+                  {isSteamRunning ? "运行中" : "未运行"}
                 </Text>
-                <Text styles={{ root: { fontFamily: "monospace", fontWeight: 500 } }}>{steamProcessId}</Text>
-              </Stack>
+              </div>
+            </div>
+            {isSteamRunning && steamProcessId && (
+              <div className={localStyles.infoGroup}>
+                <Text className={localStyles.infoLabel}>进程 ID</Text>
+                <Text className={localStyles.infoValue}>{steamProcessId}</Text>
+              </div>
             )}
-          </Stack>
-        </Stack>
+          </div>
+        </div>
 
-        <Separator />
+        <Divider />
 
         {/* Action Button */}
-        <Stack tokens={{ childrenGap: 12 }}>
-          <Text variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>
+        <div className={localStyles.section}>
+          <Text size={300} weight="semibold">
             操作
           </Text>
 
+          {coreRunning && (
+            <MessageBar intent="warning" className={localStyles.coreWarning}>
+              <MessageBarBody>
+                核心服务正在运行。点击下方按钮将会先自动停止核心服务，然后再操作 Steam。
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
           {steamPath ? (
-            <Stack horizontal tokens={{ childrenGap: 12 }} verticalAlign="center">
-              <PrimaryButton
-                text={isRestartingSteam ? "正在处理..." : isSteamRunning ? "重启为中国区" : "以中国区启动"}
+            <div className={localStyles.actionRow}>
+              <Button
+                appearance="primary"
                 onClick={handleRestartSteamChina}
-                disabled={isRestartingSteam || !steamPath}
-                iconProps={{ iconName: isSteamRunning ? "Refresh" : "Play" }}
-                styles={{ root: { minWidth: 150 } }}
-              />
+                disabled={isRestartingSteam || isStoppingCore || !steamPath}
+                icon={isSteamRunning ? <ArrowSyncRegular /> : <PlayRegular />}
+              >
+                {isStoppingCore
+                  ? "正在停止核心服务..."
+                  : isRestartingSteam
+                  ? "正在处理..."
+                  : isSteamRunning
+                  ? "重启为中国区"
+                  : "以中国区启动"}
+              </Button>
               {isSteamRunning && (
-                <Text styles={{ root: { color: "#a19f9d", fontSize: 12 } }}>
+                <Text className={localStyles.actionHint}>
                   将关闭当前 Steam 并以 -steamchina 参数重新启动
                 </Text>
               )}
-            </Stack>
+            </div>
           ) : (
-            <MessageBar messageBarType={MessageBarType.warning}>
-              未能检测到 Steam 安装路径。请确保 Steam 已正确安装。
+            <MessageBar intent="warning">
+              <MessageBarBody>
+                未能检测到 Steam 安装路径。请确保 Steam 已正确安装。
+              </MessageBarBody>
             </MessageBar>
           )}
-        </Stack>
+        </div>
 
         {/* Info Box */}
-        <MessageBar messageBarType={MessageBarType.info} isMultiline>
-          <Text variant="small">
-            <b>说明：</b> -steamchina 参数用于以中国区模式启动 Steam，这可能会影响商店区域和某些功能。
-            此功能会自动检测您的操作系统并查找 Steam 安装位置。
-          </Text>
+        <MessageBar intent="info">
+          <MessageBarBody>
+            <Text size={200}>
+              <strong>说明：</strong> -steamchina 参数用于以中国区模式启动 Steam，这可能会影响商店区域和某些功能。
+              此功能会自动检测您的操作系统并查找 Steam 安装位置。
+            </Text>
+          </MessageBarBody>
         </MessageBar>
-      </Stack>
-    </Stack>
+      </div>
+    </div>
   );
 }

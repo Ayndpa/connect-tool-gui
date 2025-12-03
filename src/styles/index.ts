@@ -1,37 +1,35 @@
-import { IStackTokens, IStackStyles, mergeStyles } from "@fluentui/react";
+import { makeStyles, tokens, shorthands } from "@fluentui/react-components";
 
-export const containerStackTokens: IStackTokens = { childrenGap: 16 };
-export const sectionStackTokens: IStackTokens = { childrenGap: 12 };
-
-export const mainStyles: IStackStyles = {
-  root: {
-    padding: 24,
-    maxWidth: 900,
-    margin: "0 auto",
-    backgroundColor: "#faf9f8",
+export const useStyles = makeStyles({
+  wrapper: {
+    backgroundColor: tokens.colorNeutralBackground2,
     minHeight: "100vh",
   },
-};
-
-export const cardStyles: IStackStyles = {
-  root: {
-    backgroundColor: "white",
-    padding: 20,
-    boxShadow: "0 1.6px 3.6px 0 rgba(0,0,0,0.132), 0 0.3px 0.9px 0 rgba(0,0,0,0.108)",
-    borderRadius: 4,
+  main: {
+    ...shorthands.padding("24px"),
+    maxWidth: "900px",
+    ...shorthands.margin("0", "auto"),
   },
-};
-
-export const headerClass = mergeStyles({
-  background: "linear-gradient(135deg, #0078d4 0%, #106ebe 100%)",
-  padding: "20px 24px",
-  borderRadius: 4,
-  marginBottom: 16,
+  card: {
+    backgroundColor: tokens.colorNeutralBackground1,
+    ...shorthands.padding("20px"),
+    boxShadow: tokens.shadow4,
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+  },
+  header: {
+    background: `linear-gradient(135deg, ${tokens.colorBrandBackground} 0%, ${tokens.colorBrandBackgroundPressed} 100%)`,
+    ...shorthands.padding("20px", "24px"),
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    marginBottom: "16px",
+  },
+  statsCard: {
+    backgroundColor: tokens.colorNeutralBackground3,
+    ...shorthands.padding("16px"),
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    textAlign: "center",
+  },
 });
 
-export const statsCardClass = mergeStyles({
-  backgroundColor: "#f3f2f1",
-  padding: 16,
-  borderRadius: 4,
-  textAlign: "center",
-});
+export const containerGap = "16px";
+export const sectionGap = "12px";
+

@@ -82,3 +82,15 @@ export interface RestartSteamChinaResponse {
   success: boolean;
   message: string;
 }
+
+export interface FirewallStatusResponse {
+  domain_enabled: boolean;
+  private_enabled: boolean;
+  public_enabled: boolean;
+  message: string;
+}
+
+export interface FirewallToggleResponse {
+  success: boolean;
+  message: string;
+}

@@ -1,20 +1,105 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Stack,
   Text,
-  Separator,
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  IColumn,
+  Divider,
   Label,
-  IconButton,
-  ProgressIndicator,
-} from "@fluentui/react";
-import { cardStyles, sectionStackTokens, containerStackTokens, statsCardClass } from "../styles";
+  Button,
+  Tooltip,
+  makeStyles,
+  tokens,
+  Table,
+  TableHeader,
+  TableRow,
+  TableHeaderCell,
+  TableBody,
+  TableCell,
+} from "@fluentui/react-components";
+import { ArrowSyncRegular } from "@fluentui/react-icons";
+import { useStyles as useGlobalStyles, containerGap, sectionGap } from "../styles";
 import { ipToString, formatBytes } from "../utils/helpers";
 import { VPNStats, VPNRoute, GetVPNStatusResponse, GetVPNRoutingTableResponse } from "../types";
+
+const useLocalStyles = makeStyles({
+  container: {
+    display: "flex",
+    flexDirection: "column",
+    gap: containerGap,
+    marginTop: "16px",
+  },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: sectionGap,
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  horizontalGroup: {
+    display: "flex",
+    gap: "32px",
+  },
+  statsRow: {
+    display: "flex",
+    gap: "16px",
+  },
+  statsCard: {
+    flex: 1,
+    backgroundColor: tokens.colorNeutralBackground3,
+    padding: "16px",
+    borderRadius: tokens.borderRadiusMedium,
+    textAlign: "center",
+  },
+  infoGroup: {
+    display: "flex",
+    flexDirection: "column",
+  },
+  infoLabel: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  infoValue: {
+    fontFamily: "monospace",
+    fontWeight: 600,
+  },
+  statusBadge: {
+    padding: "4px 12px",
+    borderRadius: "12px",
+    fontSize: tokens.fontSizeBase200,
+  },
+  statusEnabled: {
+    backgroundColor: tokens.colorPaletteGreenBackground1,
+    color: tokens.colorPaletteGreenForeground1,
+  },
+  statusDisabled: {
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground3,
+  },
+  centerContent: {
+    padding: "32px",
+    textAlign: "center",
+  },
+  emptyText: {
+    color: tokens.colorNeutralForeground3,
+  },
+  monospace: {
+    fontFamily: "monospace",
+  },
+  statsNumber: {
+    fontWeight: 600,
+    fontSize: tokens.fontSizeHero700,
+  },
+  statsLabel: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  statsSubLabel: {
+    color: tokens.colorNeutralForeground4,
+    fontSize: tokens.fontSizeBase100,
+  },
+});
 
 interface VPNTabProps {
   onError: (msg: string) => void;
@@ -28,23 +113,8 @@ export function VPNTab({ onError, onVpnStatusChange }: VPNTabProps) {
   const [vpnDeviceName, setVpnDeviceName] = useState("");
   const [vpnRoutes, setVpnRoutes] = useState<VPNRoute[]>([]);
 
-  const routeColumns: IColumn[] = [
-    {
-      key: "ip",
-      name: "IP 地址",
-      minWidth: 120,
-      onRender: (item: VPNRoute) => <Text style={{ fontFamily: "monospace" }}>{ipToString(item.ip)}</Text>,
-    },
-    { key: "name", name: "名称", fieldName: "name", minWidth: 150 },
-    {
-      key: "is_local",
-      name: "类型",
-      minWidth: 80,
-      onRender: (item: VPNRoute) => (
-        <Text style={{ color: item.is_local ? "#107c10" : "#0078d4" }}>{item.is_local ? "本地" : "远程"}</Text>
-      ),
-    },
-  ];
+  const styles = useGlobalStyles();
+  const localStyles = useLocalStyles();
 
   const refreshVPNStatus = useCallback(async () => {
     try {
@@ -85,109 +155,140 @@ export function VPNTab({ onError, onVpnStatusChange }: VPNTabProps) {
   };
 
   return (
-    <Stack tokens={containerStackTokens} styles={{ root: { marginTop: 16 } }}>
-      <Stack styles={cardStyles} tokens={sectionStackTokens}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
+    <div className={localStyles.container}>
+      <div className={`${styles.card} ${localStyles.section}`}>
+        <div className={localStyles.headerRow}>
+          <Text size={400} weight="semibold">
             VPN 状态
           </Text>
-          <Text
-            styles={{
-              root: {
-                padding: "4px 12px",
-                borderRadius: 12,
-                backgroundColor: vpnEnabled ? "#dff6dd" : "#f3f2f1",
-                color: vpnEnabled ? "#107c10" : "#605e5c",
-              },
-            }}
+          <span
+            className={`${localStyles.statusBadge} ${
+              vpnEnabled ? localStyles.statusEnabled : localStyles.statusDisabled
+            }`}
           >
             {vpnEnabled ? " 已启用" : " 未启用"}
-          </Text>
-        </Stack>
+          </span>
+        </div>
 
         {vpnEnabled && vpnStats ? (
           <>
             {/* VPN Info */}
-            <Stack horizontal tokens={{ childrenGap: 32 }}>
-              <Stack>
-                <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                  本地 IP
-                </Text>
-                <Text styles={{ root: { fontFamily: "monospace", fontWeight: 600 } }}>{vpnLocalIp || "无"}</Text>
-              </Stack>
-              <Stack>
-                <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                  设备
-                </Text>
-                <Text styles={{ root: { fontFamily: "monospace", fontWeight: 600 } }}>{vpnDeviceName || "无"}</Text>
-              </Stack>
-            </Stack>
+            <div className={localStyles.horizontalGroup}>
+              <div className={localStyles.infoGroup}>
+                <Text className={localStyles.infoLabel}>本地 IP</Text>
+                <Text className={localStyles.infoValue}>{vpnLocalIp || "无"}</Text>
+              </div>
+              <div className={localStyles.infoGroup}>
+                <Text className={localStyles.infoLabel}>设备</Text>
+                <Text className={localStyles.infoValue}>{vpnDeviceName || "无"}</Text>
+              </div>
+            </div>
 
-            <Separator />
+            <Divider />
 
             {/* Stats */}
             <Label>流量统计</Label>
-            <Stack horizontal tokens={{ childrenGap: 16 }}>
-              <div className={statsCardClass} style={{ flex: 1 }}>
-                <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: "#0078d4" } }}>
+            <div className={localStyles.statsRow}>
+              <div className={localStyles.statsCard}>
+                <Text
+                  className={localStyles.statsNumber}
+                  style={{ color: tokens.colorBrandForeground1 }}
+                >
                   {vpnStats.packets_sent.toLocaleString()}
                 </Text>
-                <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                  已发送数据包
-                </Text>
-                <Text variant="tiny" styles={{ root: { color: "#a19f9d" } }}>
+                <br />
+                <Text className={localStyles.statsLabel}>已发送数据包</Text>
+                <br />
+                <Text className={localStyles.statsSubLabel}>
                   {formatBytes(vpnStats.bytes_sent)}
                 </Text>
               </div>
-              <div className={statsCardClass} style={{ flex: 1 }}>
-                <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: "#107c10" } }}>
+              <div className={localStyles.statsCard}>
+                <Text
+                  className={localStyles.statsNumber}
+                  style={{ color: tokens.colorPaletteGreenForeground1 }}
+                >
                   {vpnStats.packets_received.toLocaleString()}
                 </Text>
-                <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                  已接收数据包
-                </Text>
-                <Text variant="tiny" styles={{ root: { color: "#a19f9d" } }}>
+                <br />
+                <Text className={localStyles.statsLabel}>已接收数据包</Text>
+                <br />
+                <Text className={localStyles.statsSubLabel}>
                   {formatBytes(vpnStats.bytes_received)}
                 </Text>
               </div>
-              <div className={statsCardClass} style={{ flex: 1 }}>
-                <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: "#d13438" } }}>
+              <div className={localStyles.statsCard}>
+                <Text
+                  className={localStyles.statsNumber}
+                  style={{ color: tokens.colorPaletteRedForeground1 }}
+                >
                   {vpnStats.packets_dropped.toLocaleString()}
                 </Text>
-                <Text variant="small" styles={{ root: { color: "#605e5c" } }}>
-                  已丢弃
+                <br />
+                <Text className={localStyles.statsLabel}>已丢弃数据包</Text>
+                <br />
+                <Text className={localStyles.statsSubLabel}>
+                  {vpnStats.packets_sent > 0
+                    ? `${((vpnStats.packets_dropped / vpnStats.packets_sent) * 100).toFixed(2)}%`
+                    : "0%"}
                 </Text>
-                <ProgressIndicator
-                  percentComplete={vpnStats.packets_sent > 0 ? vpnStats.packets_dropped / vpnStats.packets_sent : 0}
-                  barHeight={4}
-                  styles={{ progressBar: { backgroundColor: "#d13438" } }}
-                />
               </div>
-            </Stack>
+            </div>
 
-            <Separator />
+            <Divider />
 
             {/* Routing Table */}
-            <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
+            <div className={localStyles.headerRow}>
               <Label>路由表 ({vpnRoutes.length} 条路由)</Label>
-              <IconButton iconProps={{ iconName: "Refresh" }} onClick={handleGetRoutes} title="刷新路由" />
-            </Stack>
+              <Tooltip content="刷新路由" relationship="label">
+                <Button
+                  appearance="subtle"
+                  icon={<ArrowSyncRegular />}
+                  onClick={handleGetRoutes}
+                />
+              </Tooltip>
+            </div>
             {vpnRoutes.length > 0 && (
-              <DetailsList
-                items={vpnRoutes}
-                columns={routeColumns}
-                layoutMode={DetailsListLayoutMode.justified}
-                selectionMode={SelectionMode.none}
-                compact
-              />
+              <Table size="small">
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell>IP 地址</TableHeaderCell>
+                    <TableHeaderCell>名称</TableHeaderCell>
+                    <TableHeaderCell>类型</TableHeaderCell>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vpnRoutes.map((route, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Text className={localStyles.monospace}>{ipToString(route.ip)}</Text>
+                      </TableCell>
+                      <TableCell>{route.name}</TableCell>
+                      <TableCell>
+                        <Text
+                          style={{
+                            color: route.is_local
+                              ? tokens.colorPaletteGreenForeground1
+                              : tokens.colorBrandForeground1,
+                          }}
+                        >
+                          {route.is_local ? "本地" : "远程"}
+                        </Text>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </>
         ) : (
-          <Stack horizontalAlign="center" styles={{ root: { padding: 32 } }}>
-            <Text styles={{ root: { color: "#605e5c" } }}>VPN 未启用。加入大厅以启用 VPN。</Text>
-          </Stack>
+          <div className={localStyles.centerContent}>
+            <Text className={localStyles.emptyText}>
+              VPN 未启用。加入大厅以启用 VPN。
+            </Text>
+          </div>
         )}
-      </Stack>
-    </Stack>
+      </div>
+    </div>
   );
 }

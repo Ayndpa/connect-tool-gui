@@ -2,7 +2,12 @@ use hyper_util::rt::tokio::TokioIo;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Child};
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+// Global state to track the ConnectToolCore process
+static CORE_PROCESS: Lazy<Mutex<Option<Child>>> = Lazy::new(|| Mutex::new(None));
 
 pub mod connecttool {
     tonic::include_proto!("connecttool");
@@ -592,6 +597,366 @@ async fn restart_steam_china() -> Result<RestartSteamChinaResponse, String> {
 
 // ============== End Steam Management Commands ==============
 
+// ============== Firewall Management ==============
+
+/// Response structure for firewall status
+#[derive(serde::Serialize)]
+pub struct FirewallStatusResponse {
+    pub domain_enabled: bool,
+    pub private_enabled: bool,
+    pub public_enabled: bool,
+    pub message: String,
+}
+
+/// Response structure for firewall toggle
+#[derive(serde::Serialize)]
+pub struct FirewallToggleResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Response structure for core status
+#[derive(serde::Serialize)]
+pub struct CoreStatusResponse {
+    pub is_running: bool,
+    pub pid: Option<u32>,
+    pub message: String,
+}
+
+/// Response structure for core control
+#[derive(serde::Serialize)]
+pub struct CoreControlResponse {
+    pub success: bool,
+    pub is_running: bool,
+    pub pid: Option<u32>,
+    pub message: String,
+}
+
+/// Get Windows Firewall status for all profiles
+#[cfg(windows)]
+fn get_firewall_status_windows() -> Result<FirewallStatusResponse, String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    
+    let output = Command::new("powershell")
+        .args([
+            "-Command",
+            "Get-NetFirewallProfile | Select-Object -Property Name, Enabled | ConvertTo-Json"
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("PowerShell command failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse JSON output
+    let profiles: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Failed to parse firewall status: {}", e))?;
+    
+    let mut domain_enabled = false;
+    let mut private_enabled = false;
+    let mut public_enabled = false;
+    
+    if let Some(arr) = profiles.as_array() {
+        for profile in arr {
+            let name = profile.get("Name").and_then(|v| v.as_str()).unwrap_or("");
+            // Enabled can be a bool (true/false) or a number (1/0)
+            let enabled = profile.get("Enabled").map(|v| {
+                v.as_bool().unwrap_or_else(|| {
+                    v.as_i64().map(|n| n != 0).unwrap_or(false)
+                })
+            }).unwrap_or(false);
+            
+            match name {
+                "Domain" => domain_enabled = enabled,
+                "Private" => private_enabled = enabled,
+                "Public" => public_enabled = enabled,
+                _ => {}
+            }
+        }
+    }
+    
+    Ok(FirewallStatusResponse {
+        domain_enabled,
+        private_enabled,
+        public_enabled,
+        message: "Firewall status retrieved successfully".to_string(),
+    })
+}
+
+/// Set Windows Firewall status
+#[cfg(windows)]
+fn set_firewall_status_windows(enabled: bool) -> Result<FirewallToggleResponse, String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    
+    let state = if enabled { "True" } else { "False" };
+    let cmd = format!(
+        "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled {}",
+        state
+    );
+    
+    let output = Command::new("powershell")
+        .args(["-Command", &cmd])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to set firewall status: {}", stderr));
+    }
+    
+    let action = if enabled { "enabled" } else { "disabled" };
+    Ok(FirewallToggleResponse {
+        success: true,
+        message: format!("Windows Firewall {} successfully", action),
+    })
+}
+
+#[cfg(not(windows))]
+fn get_firewall_status_windows() -> Result<FirewallStatusResponse, String> {
+    Err("Firewall management is only supported on Windows".to_string())
+}
+
+#[cfg(not(windows))]
+fn set_firewall_status_windows(_enabled: bool) -> Result<FirewallToggleResponse, String> {
+    Err("Firewall management is only supported on Windows".to_string())
+}
+
+#[tauri::command]
+async fn get_firewall_status() -> Result<FirewallStatusResponse, String> {
+    get_firewall_status_windows()
+}
+
+#[tauri::command]
+async fn set_firewall(enabled: bool) -> Result<FirewallToggleResponse, String> {
+    set_firewall_status_windows(enabled)
+}
+
+// ============== End Firewall Management ==============
+
+// ============== ConnectToolCore Management ==============
+
+/// Get the path to ConnectToolCore executable
+fn get_core_executable_path() -> PathBuf {
+    let current_exe = std::env::current_exe().unwrap_or_default();
+    let current_dir = current_exe.parent().unwrap_or(std::path::Path::new("."));
+    
+    #[cfg(windows)]
+    let core_name = "ConnectToolCore.exe";
+    #[cfg(not(windows))]
+    let core_name = "ConnectToolCore";
+    
+    current_dir.join(core_name)
+}
+
+/// Check if the core process is running by checking the managed process
+fn check_core_process_running() -> (bool, Option<u32>) {
+    let mut guard = CORE_PROCESS.lock().unwrap();
+    
+    if let Some(ref mut child) = *guard {
+        // Try to check if process is still running
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                // Process has exited
+                *guard = None;
+                (false, None)
+            }
+            Ok(None) => {
+                // Process is still running
+                (true, Some(child.id()))
+            }
+            Err(_) => {
+                // Error checking, assume not running
+                *guard = None;
+                (false, None)
+            }
+        }
+    } else {
+        (false, None)
+    }
+}
+
+/// Start the ConnectToolCore process
+#[cfg(windows)]
+fn start_core_process() -> Result<(bool, Option<u32>), String> {
+    use std::os::windows::process::CommandExt;
+    // 使用 CREATE_NEW_CONSOLE 让 Core 在独立的控制台窗口中运行，方便用户查看日志
+    const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+    
+    let core_path = get_core_executable_path();
+    
+    if !core_path.exists() {
+        return Err(format!("ConnectToolCore not found at: {}", core_path.display()));
+    }
+    
+    let mut guard = CORE_PROCESS.lock().unwrap();
+    
+    // Check if already running
+    if let Some(ref mut child) = *guard {
+        match child.try_wait() {
+            Ok(None) => {
+                // Already running
+                return Ok((true, Some(child.id())));
+            }
+            _ => {
+                // Process ended, clear it
+                *guard = None;
+            }
+        }
+    }
+    
+    // Start the process with a visible console window for log viewing
+    let child = Command::new(&core_path)
+        .current_dir(core_path.parent().unwrap_or(std::path::Path::new(".")))
+        .creation_flags(CREATE_NEW_CONSOLE)
+        .spawn()
+        .map_err(|e| format!("Failed to start ConnectToolCore: {}", e))?;
+    
+    let pid = child.id();
+    *guard = Some(child);
+    
+    // Wait a bit for the process to initialize
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    Ok((true, Some(pid)))
+}
+
+#[cfg(not(windows))]
+fn start_core_process() -> Result<(bool, Option<u32>), String> {
+    let core_path = get_core_executable_path();
+    
+    if !core_path.exists() {
+        return Err(format!("ConnectToolCore not found at: {}", core_path.display()));
+    }
+    
+    let mut guard = CORE_PROCESS.lock().unwrap();
+    
+    // Check if already running
+    if let Some(ref mut child) = *guard {
+        match child.try_wait() {
+            Ok(None) => {
+                // Already running
+                return Ok((true, Some(child.id())));
+            }
+            _ => {
+                // Process ended, clear it
+                *guard = None;
+            }
+        }
+    }
+    
+    // Start the process
+    let child = Command::new(&core_path)
+        .current_dir(core_path.parent().unwrap_or(std::path::Path::new(".")))
+        .spawn()
+        .map_err(|e| format!("Failed to start ConnectToolCore: {}", e))?;
+    
+    let pid = child.id();
+    *guard = Some(child);
+    
+    // Wait a bit for the process to initialize
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    Ok((true, Some(pid)))
+}
+
+/// Stop the ConnectToolCore process
+fn stop_core_process() -> Result<(), String> {
+    let mut guard = CORE_PROCESS.lock().unwrap();
+    
+    if let Some(ref mut child) = *guard {
+        // Try to kill the process
+        child.kill().map_err(|e| format!("Failed to kill ConnectToolCore: {}", e))?;
+        
+        // Wait for it to finish
+        let _ = child.wait();
+        
+        *guard = None;
+        Ok(())
+    } else {
+        Ok(()) // Already not running
+    }
+}
+
+#[tauri::command]
+async fn get_core_status() -> Result<CoreStatusResponse, String> {
+    let (is_running, pid) = check_core_process_running();
+    
+    let message = if is_running {
+        format!("ConnectToolCore is running (PID: {})", pid.unwrap_or(0))
+    } else {
+        "ConnectToolCore is not running".to_string()
+    };
+    
+    Ok(CoreStatusResponse {
+        is_running,
+        pid,
+        message,
+    })
+}
+
+#[tauri::command]
+async fn get_core_version() -> Result<GetVersionResponse, String> {
+    let mut client = get_client().await?;
+    let response = client
+        .get_version(GetVersionRequest {})
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(response.into_inner())
+}
+
+#[tauri::command]
+async fn start_core() -> Result<CoreControlResponse, String> {
+    match start_core_process() {
+        Ok((is_running, pid)) => Ok(CoreControlResponse {
+            success: true,
+            is_running,
+            pid,
+            message: "ConnectToolCore started successfully".to_string(),
+        }),
+        Err(e) => Ok(CoreControlResponse {
+            success: false,
+            is_running: false,
+            pid: None,
+            message: e,
+        }),
+    }
+}
+
+#[tauri::command]
+async fn stop_core() -> Result<CoreControlResponse, String> {
+    match stop_core_process() {
+        Ok(()) => Ok(CoreControlResponse {
+            success: true,
+            is_running: false,
+            pid: None,
+            message: "ConnectToolCore stopped successfully".to_string(),
+        }),
+        Err(e) => Ok(CoreControlResponse {
+            success: false,
+            is_running: true,
+            pid: None,
+            message: e,
+        }),
+    }
+}
+
+// ============== End ConnectToolCore Management ==============
+
+/// Cleanup function to stop core process when application exits
+fn cleanup_core_on_exit() {
+    if let Ok(()) = stop_core_process() {
+        println!("ConnectToolCore stopped on application exit");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -607,8 +972,20 @@ pub fn run() {
             get_vpn_routing_table,
             find_steam,
             get_steam_running_status,
-            restart_steam_china
+            restart_steam_china,
+            get_firewall_status,
+            set_firewall,
+            get_core_status,
+            get_core_version,
+            start_core,
+            stop_core
         ])
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Stop core process when the window is closed
+                cleanup_core_on_exit();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
